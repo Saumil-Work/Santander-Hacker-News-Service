@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Net.Http.Json;
 using Santander_Hacker_News_Service.Models;
 
 namespace Santander_Hacker_News_Service.Services;
@@ -74,7 +75,7 @@ public class HackerNewsService : IHackerNewsService
             var response = await _httpClient.GetAsync(BestStoriesUrl, cancellationToken);
             response.EnsureSuccessStatusCode();
 
-            var ids = await response.Content.ReadAsAsync<List<int>>(cancellationToken);
+            var ids = await response.Content.ReadFromJsonAsync<List<int>>(cancellationToken);
             return ids ?? new List<int>();
         }
         catch (Exception ex)
@@ -141,7 +142,7 @@ public class HackerNewsService : IHackerNewsService
             var response = await _httpClient.GetAsync(url, cancellationToken);
             response.EnsureSuccessStatusCode();
 
-            var item = await response.Content.ReadAsAsync<HackerNewsItem>(cancellationToken);
+            var item = await response.Content.ReadFromJsonAsync<HackerNewsItem>(cancellationToken);
 
             if (item == null || item.Deleted || item.Dead)
             {
