@@ -4,6 +4,7 @@ using Moq.Protected;
 using Santander_Hacker_News_Service.Models;
 using Santander_Hacker_News_Service.Services;
 using System.Net;
+using System.Text;
 using Xunit;
 
 namespace Santander_Hacker_News_Service.Tests.Services;
@@ -40,7 +41,7 @@ public class HackerNewsServiceTests
             .ReturnsAsync(new HttpResponseMessage
             {
                 StatusCode = HttpStatusCode.OK,
-                Content = new StringContent(bestStoriesJson)
+                Content = new StringContent(bestStoriesJson, System.Text.Encoding.UTF8, "application/json")
             });
 
         var storyResponses = new List<HackerNewsItem>
@@ -60,12 +61,12 @@ public class HackerNewsServiceTests
                 ItExpr.IsAny<CancellationToken>())
             .ReturnsAsync((HttpRequestMessage request, CancellationToken ct) =>
             {
-                var storyId = int.Parse(request.RequestUri!.ToString().Split('/')[6]);
+                var storyId = int.Parse(request.RequestUri!.ToString().Split('/')[5].Replace(".json", ""));
                 var story = storyResponses.FirstOrDefault(s => s.Id == storyId);
                 return new HttpResponseMessage
                 {
                     StatusCode = HttpStatusCode.OK,
-                    Content = new StringContent(System.Text.Json.JsonSerializer.Serialize(story))
+                    Content = new StringContent(System.Text.Json.JsonSerializer.Serialize(story), System.Text.Encoding.UTF8, "application/json")
                 };
             });
 
@@ -122,7 +123,7 @@ public class HackerNewsServiceTests
             .ReturnsAsync(new HttpResponseMessage
             {
                 StatusCode = HttpStatusCode.OK,
-                Content = new StringContent(bestStoriesJson)
+                Content = new StringContent(bestStoriesJson, Encoding.UTF8, "application/json")
             });
 
         var storyResponses = new Dictionary<int, HackerNewsItem>
@@ -140,12 +141,12 @@ public class HackerNewsServiceTests
                 ItExpr.IsAny<CancellationToken>())
             .ReturnsAsync((HttpRequestMessage request, CancellationToken ct) =>
             {
-                var storyId = int.Parse(request.RequestUri!.ToString().Split('/')[6]);
+                var storyId = int.Parse(request.RequestUri!.ToString().Split('/')[5].Replace(".json", ""));
                 var story = storyResponses[storyId];
                 return new HttpResponseMessage
                 {
                     StatusCode = HttpStatusCode.OK,
-                    Content = new StringContent(System.Text.Json.JsonSerializer.Serialize(story))
+                    Content = new StringContent(System.Text.Json.JsonSerializer.Serialize(story), System.Text.Encoding.UTF8, "application/json")
                 };
             });
 
@@ -164,7 +165,7 @@ public class HackerNewsServiceTests
     {
         // Arrange
         var bestStoryIds = new[] { 1, 2 };
-        var bestStoriesJson = System.Text.Json.JsonSerializer.Serialize(bestStoryIds.ToList());
+         var bestStoriesJson = System.Text.Json.JsonSerializer.Serialize(bestStoryIds.ToList());
 
         _httpMessageHandlerMock
             .Protected()
@@ -175,7 +176,7 @@ public class HackerNewsServiceTests
             .ReturnsAsync(new HttpResponseMessage
             {
                 StatusCode = HttpStatusCode.OK,
-                Content = new StringContent(bestStoriesJson)
+                Content = new StringContent(bestStoriesJson, System.Text.Encoding.UTF8, "application/json")
             });
 
         var storyResponses = new Dictionary<int, HackerNewsItem>
@@ -192,12 +193,12 @@ public class HackerNewsServiceTests
                 ItExpr.IsAny<CancellationToken>())
             .ReturnsAsync((HttpRequestMessage request, CancellationToken ct) =>
             {
-                var storyId = int.Parse(request.RequestUri!.ToString().Split('/')[6]);
+                var storyId = int.Parse(request.RequestUri!.ToString().Split('/')[5].Replace(".json", ""));
                 var story = storyResponses[storyId];
                 return new HttpResponseMessage
                 {
                     StatusCode = HttpStatusCode.OK,
-                    Content = new StringContent(System.Text.Json.JsonSerializer.Serialize(story))
+                    Content = new StringContent(System.Text.Json.JsonSerializer.Serialize(story), System.Text.Encoding.UTF8, "application/json")
                 };
             });
 
@@ -226,7 +227,7 @@ public class HackerNewsServiceTests
             .ReturnsAsync(new HttpResponseMessage
             {
                 StatusCode = HttpStatusCode.OK,
-                Content = new StringContent(bestStoriesJson)
+                Content = new StringContent(bestStoriesJson, System.Text.Encoding.UTF8, "application/json")
             });
 
         var service = new HackerNewsService(_httpClient, _loggerMock.Object);
@@ -260,8 +261,9 @@ public class HackerNewsServiceTests
     public async Task GetBestStoriesAsync_WithCancellation_ThrowsOperationCanceledException()
     {
         // Arrange
+        // Create a cancelled token BEFORE calling the service
         var cts = new CancellationTokenSource();
-        cts.Cancel();
+        cts.CancelAfter(10); // Cancel after 10ms to let the operation start
 
         _httpMessageHandlerMock
             .Protected()
@@ -269,16 +271,23 @@ public class HackerNewsServiceTests
                 "SendAsync",
                 ItExpr.IsAny<HttpRequestMessage>(),
                 ItExpr.IsAny<CancellationToken>())
-            .ThrowsAsync(new OperationCanceledException());
+            .Returns((HttpRequestMessage request, CancellationToken ct) =>
+            {
+                // Return a task that will be canceled
+                return Task.Delay(5000, ct).ContinueWith(t => 
+                    new HttpResponseMessage(HttpStatusCode.OK) 
+                    { 
+                        Content = new StringContent("[]", Encoding.UTF8, "application/json") 
+                    }, 
+                    cts.Token);
+            });
 
         var service = new HackerNewsService(_httpClient, _loggerMock.Object);
 
         // Act & Assert
-        // Accept any exception derived from OperationCanceledException (includes TaskCanceledException)
-        var exception = await Assert.ThrowsAsync<OperationCanceledException>(
-            () => service.GetBestStoriesAsync(10, cts.Token));
-        
-        Assert.NotNull(exception);
+        // HttpClient throws TaskCanceledException (which inherits from OperationCanceledException) when cancelled
+        await Assert.ThrowsAsync<TaskCanceledException>(() => 
+            service.GetBestStoriesAsync(10, cts.Token));
     }
 
     [Fact]
@@ -297,7 +306,7 @@ public class HackerNewsServiceTests
             .ReturnsAsync(new HttpResponseMessage
             {
                 StatusCode = HttpStatusCode.OK,
-                Content = new StringContent(bestStoriesJson)
+                Content = new StringContent(bestStoriesJson, Encoding.UTF8, "application/json")
             });
 
         var callCount = 0;
@@ -318,7 +327,7 @@ public class HackerNewsServiceTests
                     };
                 }
 
-                var storyId = int.Parse(request.RequestUri!.ToString().Split('/')[6]);
+                var storyId = int.Parse(request.RequestUri!.ToString().Split('/')[5].Replace(".json", ""));
                 var story = new HackerNewsItem
                 {
                     Id = storyId,
@@ -332,7 +341,7 @@ public class HackerNewsServiceTests
                 return new HttpResponseMessage
                 {
                     StatusCode = HttpStatusCode.OK,
-                    Content = new StringContent(System.Text.Json.JsonSerializer.Serialize(story))
+                    Content = new StringContent(System.Text.Json.JsonSerializer.Serialize(story), Encoding.UTF8, "application/json")
                 };
             });
 
